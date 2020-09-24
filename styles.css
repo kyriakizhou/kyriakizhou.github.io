@@ -1,0 +1,263 @@
+/* The stylesheet is organized into three sections: 1. general; 2.id; 3.class
+each is then organized alphabetically. */
+a{
+    margin-top: 10px;
+    text-decoration: none;
+    color: #872C80}
+body {
+    font-family:  'Long Cang', sans-serif;
+    font-size: 90%;
+    color: #666;
+    background-color: #f6f4e8;}
+fieldset {
+    width: 310px;
+    margin: 20px auto;
+    border: 1px solid #d6d6d6;
+    background-color: #ffffff;
+    line-height: 1.6em;}
+footer{
+    text-align: center;
+    float: bottom;}
+h1.center-text{
+    font-family: 'Berkshire Swash', serif;
+    font-size: 550%;}
+img{
+    max-width: 650px;
+    max-height: 800px;}
+input[type="text"] {
+    width: 220px;
+    border: 1px solid #d6d6d6;
+    padding: 2px;
+    outline: none;}
+input[type="text"]:focus,
+input[type="text"]:hover {
+    background-color: #d0e2f0;
+    border: 1px solid #999999;}
+input[type="submit"] {
+    border: 1px solid #006633;
+    background-color: #009966;
+    color: #ffffff;
+    border-radius: 5px;
+    padding: 5px;
+    margin: 10px auto;}
+input[type="submit"]:hover {
+    border: 1px solid #006633;
+    background-color: #00CC33;
+    color: #ffffff;
+    cursor: pointer;}
+legend {
+    font-style: italic;
+    color: #666666;}
+li {
+    list-style-image: url("images/icon-plus.png");
+    line-height: 1.6em;}
+table {
+    border-spacing: 0px;}
+th, td {
+    padding: 5px 30px 5px 10px;
+    border-spacing: 0px;
+    font-size: 90%;
+    margin: 0px;}
+th, td {
+    text-align: left;
+    background-color: #DAE5D7;
+    border-top: 1px solid #f1f8fe;
+    border-bottom: 1px solid #cbd2d8;
+    border-right: 1px solid #cbd2d8;}
+tr.head th {
+    color: #fff;
+    background-color: #3DB325;
+    border-bottom: 2px solid #5EAE4F;
+    border-right: 1px solid #A2D897;
+    border-top: 1px solid #A2D897;
+    text-align: center;
+    text-shadow: -1px -1px 1px #666666;
+    letter-spacing: 0.15em;}
+td {
+    text-shadow: 1px 1px 1px #ffffff;}
+tr.even td, tr.even th {
+    background-color: #C0DBBB;}
+tr.head th:first-child {
+    /* WebKit is a browser engine used in Apple's Safari browser, Amazon 
+      Kindle e-book reader, BlackBerry Browser in OS 6 and above.
+
+      Not all CSS3 properties work well in all browsers. In a way to ensure that web pages display as expected in their browsers, vendors like Mozilla and Webkit developed their own browser-compatible properties. With CSS3, many compatibility issues are now resolved.
+      However, it is not unusual to still see these properties used in stylesheets. */
+
+    /* Webkit property*/
+    -webkit-border-top-left-radius: 5px;
+
+    /* Mozilla property*/
+    -moz-border-radius-topleft: 5px;
+
+    /* CSS3 property*/
+    border-top-left-radius: 5px;
+
+    /* More on border-radius property: https://www.the-art-of-web.com/css/border-radius/ */
+}
+tr.head th:last-child {
+    -webkit-border-top-right-radius: 5px;
+    -moz-border-radius-topright: 5px;
+    border-top-right-radius: 5px;}
+ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;}  
+ul li {
+    display: inline;
+    padding: 10px;
+    float:right;}   
+ul li a, 
+ul a :hover, 
+ul li a:focus, 
+ul li a:active {
+    border: none;
+    text-decoration: none;
+    color: inherit;}
+video{
+    width: 940px;}
+
+#page {
+    max-width: 1240px;
+    min-width: 920px;
+    margin: 10px auto 10px auto;
+    
+    border: 4px  #000;
+    background-color: #ffffff;
+    vertical-align: baseline;
+}
+.camera{
+    margin: 0px auto;
+}
+.center-text {
+    text-align: center;
+    font-size: 2em;}
+.center-text2 {
+    text-align: center;
+    font-size: 2em;
+    float: left;
+    font-family: 'Roboto Mono', monospace;}
+.center-2{
+    width: 940px;
+    margin: 20px auto;
+    padding-bottom: 15px;
+    padding-top: 5px;
+    font-family: 'Roboto Mono', monospace;}
+.center-3{
+    width: 300px;
+    margin: 0 auto;
+    font-family: 'Roboto Mono', monospace;
+    text-align: center;}
+.center-mid-1{
+    width: 940px;
+    height: 500px;
+    background-color: #BEB594;
+    padding: 5px 20px 15px;
+    margin: 10px auto;}
+.center-mid-2{
+    width: 940px;
+    background-color: #efeae6;
+    padding-bottom: 15px;
+    padding-top: 5px;
+    margin: 0px auto;}
+.center-mid-3{
+    width: 940px;
+    background-color: #E2D5C2;
+    padding-bottom: 15px;
+    padding-top: 5px;
+    margin: 0px auto;}
+.center-mid-4{
+    width: 940px;
+    background-color: #EAE7E2;
+    padding-bottom: 5px;
+    margin: 0px auto;
+}
+.center-2>h1, .center-2>p{
+    text-align: center;}
+.equip-pics{
+    max-width: 300px;
+    max-height: 300px;
+    margin: 20px auto 20px auto;
+    padding: 20px;
+    text-align: center;
+}
+.icon-pics{
+    max-width: 100px;
+    margin: 20px auto 10px auto;
+    padding: 20px 10px 10px;
+    text-align: center;
+}
+.img-1{
+    margin: auto;
+    width: 100%;}
+.img-2{
+    margin: auto;
+    width: 30%;
+    padding-left: 20px;}}
+.menu-holder{
+float: right;
+max-width: 80%;
+position: fixed;
+text-align: center;
+height: 100%;
+background-color: #ffffff;
+right: -100%;
+top: 0;
+transition: right .3s ease;
+width: 100%;
+overflow: auto;
+max-width: 100%;
+z-index: 99;}
+.main-menu{
+    font-size: 2em;
+    font-family: 'Roboto Mono', monospace;}     
+.map{
+    text-align: center;
+    margin: 0px auto;
+    font-size: 120%;
+    font-family: 'Roboto Mono', monospace;}
+.left-pics{
+    margin: 20px auto;
+    padding: 100px;}
+.left-pics:hover{
+    transform: rotate(5deg);}
+.list{
+    margin: 30px auto;
+    font-family: 'Roboto Mono', monospace;
+    font-weight: 2000;
+    text-align: center;  
+    padding: 20px;
+    text-decoration-line: overline underline;
+    text-decoration-style: wavy;}
+p.credit{
+    margin: 30px auto;
+    font-family: 'Roboto Mono', monospace;
+    font-weight: 2000;
+    text-align: center;  
+    padding: 20px;
+    text-decoration:none; }
+.right-pics-small{
+    max-width: 300px;
+    padding: 120px 40px;
+    float: right;}
+.right-pics{
+    padding: 0px 100px 50px 500px;}
+.right-pics:hover{
+    transform: rotate(-5deg);}
+.smlogo{
+    width: 30px;
+    margin: 0px auto;}
+.submit {
+    width: 310px;
+    margin: 0px auto;}
+.title {
+    float: left;
+    width: 160px;
+    clear: left;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.8em;}
+.websites{
+    text-decoration-line: overline underline;
+    text-decoration-style: wavy;
+    padding: 10px;
+}
