@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Optimal Subscription Messaging - Sunday</title>
+  <meta name="description"
+    content="An intern project I proposed and mentored to improve when and how often billing error emails go out: send-time experiments in production, an LLM evaluation harness, and an XGBoost model with a counterfactual send-hour sweep.">
+  <link rel="stylesheet" href="../assets/css/site.css?v=20261003c">
+  <style>
+.viz {
+  position: relative;
+}
+
+.viz svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.viz text {
+  font-family: var(--font-body);
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.viz-grid {
+  stroke: rgba(6, 29, 73, 0.1);
+  stroke-width: 1;
+}
+
+.viz-axis,
+.viz-axis-title {
+  fill: rgba(6, 29, 73, 0.5);
+  font-size: 13px;
+}
+
+.viz-axis-title {
+  font-size: 12.5px;
+}
+
+.viz-label {
+  fill: var(--ink);
+  font-size: 13px;
+}
+
+.viz-value {
+  fill: rgba(6, 29, 73, 0.72);
+  font-size: 13px;
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.viz-group {
+  fill: rgba(6, 29, 73, 0.55);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+}
+
+.viz-s1 {
+  fill: #7e4b92;
+}
+
+.viz-s2 {
+  fill: #cc79a7;
+}
+
+.viz-context {
+  fill: #a9b1c0;
+}
+
+.viz-dot {
+  stroke: var(--paper);
+  stroke-width: 2;
+}
+
+.viz-baseline {
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.viz-hit {
+  fill: transparent;
+}
+
+.viz-mark {
+  outline: none;
+}
+
+.viz-mark .viz-shape {
+  transition: opacity 120ms ease;
+}
+
+.viz-mark:hover .viz-shape,
+.viz-mark:focus-visible .viz-shape {
+  opacity: 0.72;
+}
+
+.viz-mark:focus-visible .viz-hit {
+  stroke: rgba(6, 29, 73, 0.45);
+  stroke-width: 1;
+}
+
+.viz-tip {
+  position: absolute;
+  z-index: 5;
+  padding: 8px 10px;
+  border: 1px solid rgba(6, 29, 73, 0.12);
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow: 0 6px 18px var(--shadow);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.viz-tip-value {
+  display: block;
+  color: var(--ink);
+}
+
+.viz-tip-label {
+  display: block;
+  color: rgba(6, 29, 73, 0.62);
+  font-size: 12px;
+}
+
+.viz-table {
+  margin-top: 14px;
+}
+
+.viz-table summary {
+  cursor: pointer;
+  color: rgba(6, 29, 73, 0.62);
+  font-size: clamp(13px, 1vw, 17px);
+}
+
+.detail-section.is-paper .viz-table .arch-table-wrap {
+  margin: 12px 0 0;
+}
+
+.arch-flow.is-warn {
+  stroke: rgba(214, 116, 150, 0.75);
+}
+
+.arch-flow.is-strong {
+  stroke-width: 2;
+}
+
+.lt-tick {
+  stroke: rgba(6, 29, 73, 0.28);
+  stroke-width: 1;
+}
+
+.lt-hour {
+  font-size: 12px;
+  fill: rgba(6, 29, 73, 0.5);
+}
+
+.lt-hour.is-end {
+  text-anchor: end;
+}
+
+.lt-hour.is-start {
+  text-anchor: start;
+}
+
+.lt-hour.is-mid {
+  text-anchor: middle;
+}
+
+.lt-signal {
+  fill: rgba(6, 29, 73, 0.72);
+  stroke: var(--paper);
+  stroke-width: 1.5;
+}
+
+.viz-ref {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.viz-note {
+  fill: rgba(6, 29, 73, 0.6);
+  font-size: 12.5px;
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.viz-track {
+  stroke: rgba(6, 29, 73, 0.14);
+  stroke-width: 1;
+}
+
+.sw-ghost {
+  fill: var(--paper);
+  stroke: rgba(6, 29, 73, 0.4);
+  stroke-width: 1.5;
+}
+
+.sw-dot {
+  fill: #7e4b92;
+  stroke: var(--paper);
+  stroke-width: 1.5;
+}
+
+.sw-fail {
+  stroke: rgba(214, 116, 150, 0.85);
+  stroke-width: 2;
+}
+
+.hr-cell {
+  fill: rgba(126, 75, 146, 0.8);
+}
+
+.hr-cell.is-off {
+  fill: var(--paper);
+  stroke: rgba(6, 29, 73, 0.35);
+  stroke-width: 1;
+}
+
+.hr-bracket {
+  fill: none;
+  stroke: rgba(214, 116, 150, 0.85);
+  stroke-width: 2;
+}
+
+.hr-marker {
+  fill: var(--ink);
+}
+  </style>
+</head>
+<body>
+  <div class="site-shell">
+    <main class="page-main">
+      <a class="back-link" href="../projects.html">back / projects</a>
+      <div class="page-title">
+        <h1>Optimal Subscription Messaging</h1>
+                <p>send-time optimization / llm evaluation / xgboost / intern mentorship</p>
+      </div>
+
+      <section class="archive-panel detail-section is-paper" aria-labelledby="introduction-title">
+        <h2 id="introduction-title">Motivation</h2>
+        <p>One of my team's responsibilities is sending customers every kind of subscription lifecycle email. One of
+          the most important is the billing error email. It tells a customer that their auto-renew payment did not
+          go through and that they are about to lose their subscription. Push notifications and in-app banners carry
+          the same message.</p>
+        <p>Subscriptions bring in billions of dollars for Apple every year at a very high gross margin. That makes
+          winning back customers who churn involuntarily critical: these customers did not choose to leave, a
+          payment just failed. Even a 0.1% increase in win-back rate is worth millions of dollars.</p>
+        <p>A lot about this email can be improved. The first is when we send it. Today the messaging worker picks
+          the day but not the time, and it reschedules itself one to three days out, so emails go out at an
+          essentially random timestamp on a drifting day. The second is cadence: how many messages we send and on
+          which days. The third is the email content itself. This project covers send time and cadence; content is a
+          separate follow-up A/B test.</p>
+        <p>We tried three ways of choosing the send time, each more personalized than the last. Phase 1 tests simple
+          rules in production, such as a fixed local hour. Phase 2 tests whether an LLM can read a subscription's
+          history and predict whether and when the customer will come back. Phase 3 trains an XGBoost model on past
+          outcomes and uses it to compare all 24 send hours for the same subscriber.</p>
+        <figure class="detail-figure arch-figure">
+          <div class="arch-diagram">
+            <svg viewBox="0 0 760 192" role="img" aria-labelledby="ov-title ov-desc">
+              <title id="ov-title">Project overview</title>
+              <desc id="ov-desc">Three phases with their main results. Phase 1, human heuristics in production: the scheduler lag went from hours to one minute, and the live results are not final. Phase 2, LLM: a good win-back classifier, but send-time predictions near chance. Phase 3, machine learning: the send-hour spread falls from 11.3 to 3.1 points, and 8 PM to 10 PM is the worst window.</desc>
+              <defs>
+                <marker id="ov-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto"><path d="M0 0L10 5L0 10Z" fill="rgba(6, 29, 73, 0.4)"/></marker>
+              </defs>
+              <path class="arch-flow" d="M235 96H261" marker-end="url(#ov-arrow)"/>
+              <path class="arch-flow" d="M497 96H523" marker-end="url(#ov-arrow)"/>
+              <rect class="arch-node" x="1" y="8" width="234" height="176" rx="6"/>
+              <text class="arch-pod" x="118" y="34">PHASE 1</text>
+              <text class="arch-label" x="118" y="60">Human heuristics</text>
+              <text class="arch-caption" x="118" y="86">fixed hours, Likely Time,</text>
+              <text class="arch-caption" x="118" y="104">and cadences in production</text>
+              <line class="lt-tick" x1="21" y1="126" x2="215" y2="126"/>
+              <text class="arch-caption is-buddy" x="118" y="150">lag: hours → one minute</text>
+              <text class="arch-caption is-buddy" x="118" y="168">live results not final</text>
+              <rect class="arch-node" x="263" y="8" width="234" height="176" rx="6"/>
+              <text class="arch-pod" x="380" y="34">PHASE 2</text>
+              <text class="arch-label" x="380" y="60">LLM</text>
+              <text class="arch-caption" x="380" y="86">predict win-back and time</text>
+              <text class="arch-caption" x="380" y="104">from masked histories</text>
+              <line class="lt-tick" x1="283" y1="126" x2="477" y2="126"/>
+              <text class="arch-caption is-buddy" x="380" y="150">good win-back classifier</text>
+              <text class="arch-caption is-buddy" x="380" y="168">send time near chance</text>
+              <rect class="arch-node" x="525" y="8" width="234" height="176" rx="6"/>
+              <text class="arch-pod" x="642" y="34">PHASE 3</text>
+              <text class="arch-label" x="642" y="60">Machine learning</text>
+              <text class="arch-caption" x="642" y="86">score each subscriber</text>
+              <text class="arch-caption" x="642" y="104">at all 24 send hours</text>
+              <line class="lt-tick" x1="545" y1="126" x2="739" y2="126"/>
+              <text class="arch-caption is-buddy" x="642" y="150">spread 11.3 → 3.1 points</text>
+              <text class="arch-caption is-buddy" x="642" y="168">avoid 8 PM to 10 PM</text>
+            </svg>
+          </div>
+          <figcaption>Project overview. Each phase tests a different way to pick the send time, and each phase's result set up the question for the next one. The purple text is each phase's main result.</figcaption>
+        </figure>
+        <p>What we found: most of the gap between good and bad send hours comes from which customers happen to get
+          messaged at those hours, not from the hour itself. In the raw data, recovery is 11.3 percentage points
+          higher at 5 AM than at 9 PM, but older subscriptions both recover more often and tend to get their
+          messages at different hours. Holding subscription age, message delay, and storefront constant shrinks the
+          gap to 3.1 points. 8 PM to 10 PM is the worst window under every adjustment, and a fixed 5 AM send is
+          associated with a 1.65-point lift that still needs a live test.</p>
+        <p>The LLM turned out to be a good classifier of which customers will come back, but its send-time guesses
+          are barely better than random, and it costs too much to run on every subscription. The XGBoost model
+          scores about 36,000 subscriptions per second on one machine, so it can score the full population and let
+          us test a send-time policy offline before committing to a live experiment.</p>
+        <p>I proposed this project for the 2026 Commerce Subscriptions intern program and mentored the intern who
+          carried it out. Who built what is under <a href="#resources-title">Resources</a>.</p>
+
+        <h2>Methods</h2>
+        <h3>Baseline</h3>
+        <p>The messaging worker is a daily, account-level job in the subscription scheduler. It looks at an
+          account's subscriptions, sends whatever messages are due, and schedules its next run one to three days
+          out. Some of those steps are not whole days, so the send time shifts every cycle. And because one worker
+          sends every message type, changing its schedule changes all of them.</p>
+        <p>We measured the baseline over the 30 days before the first test pod started. During that window, sends
+          were spread almost evenly across the hours of the day. Recovery and win-back rates vary a lot by
+          storefront, so any comparison between pods has to hold the storefront mix constant. Some recovered
+          subscriptions also lapse again later, so recovery is not the same thing as long-term retention.</p>
+
+        <h3>Phase 1: Human Heuristics</h3>
+        <p>Phase 1 starts with the simplest change we could ship: send at a sensible local hour instead of a random
+          one. Few customers fix a payment method at 3:00 AM, for example. Every Phase 1 treatment depends on
+          knowing the customer's local time.</p>
+
+        <h4>Timezone-Aware Send Times</h4>
+        <p>Each subscription record has a user timezone field, but the field has no standard format. We parse it and
+          store the target send time as an offset from local midnight. The snippet below shows the calculation for a
+          9:00 AM target; it is an illustration, not the production code.</p>
+        <pre class="code-block">ZoneId zone = ZoneId.of("America/Los_Angeles");
+long offsetFromLocalMidnightMillis = 9 * 60 * 60 * 1000L;
+
+LocalDate scheduledLocalDate = scheduledActionDate.toInstant()
+        .atZone(zone)
+        .toLocalDate();
+
+ZonedDateTime target = scheduledLocalDate
+        .atStartOfDay(zone)
+        .plus(offsetFromLocalMidnightMillis, ChronoUnit.MILLIS);</pre>
+        <p>Most records store a fixed GMT offset, which does not follow Daylight Saving Time, so some users end up
+          an hour off for half the year. When the value is empty or cannot be parsed, we fall back to the storefront
+          timezone.</p>
+
+        <h4>Treatments</h4>
+        <p>Each treatment changes only the time of day; the existing cadence still picks the day.</p>
+        <ul class="detail-list">
+          <li><strong>Fixed time.</strong> Each test pod sends at a single local hour, from 6:00 AM to 12:00
+            AM.</li>
+          <li><strong>Purchase-time replication.</strong> The worker sends at the local time when the newest
+            subscription on the account was first purchased.</li>
+          <li><strong>Likely Time.</strong> The worker sends at the circular mean of the times when the user bought
+            a subscription or turned off auto-renew.</li>
+        </ul>
+        <p>Likely Time places each signal on a 24-hour circle and adds the points as vectors. The direction of the
+          sum gives the mean time, and its length divided by the number of signals gives a cluster strength between
+          0 and 1. The worker only uses the mean when there are at least two signals and the strength is above 0.7
+          (a second pod uses 0.8). The circular math matters: a plain average of 11:50 PM and 12:10 AM comes out to
+          noon.</p>
+        <figure class="detail-figure arch-figure">
+          <div class="arch-diagram">
+            <svg viewBox="0 0 760 396" role="img" aria-labelledby="lt-title lt-desc">
+              <title id="lt-title">Likely Time on a 24-hour clock</title>
+              <desc id="lt-desc">Left: three signals near 8 PM give a circular mean of 8:03 PM with a strength of 0.998. Right: two signals 20 minutes apart around midnight. The linear average points to noon, and the circular mean points to midnight.</desc>
+              <defs>
+                <marker id="lt-arrow-is-buddy" viewBox="0 0 10 10" refX="8" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto"><path d="M0 0L10 5L0 10Z" fill="rgba(126, 75, 146, 0.85)"/></marker>
+                <marker id="lt-arrow-is-warn" viewBox="0 0 10 10" refX="8" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto"><path d="M0 0L10 5L0 10Z" fill="rgba(214, 116, 150, 0.85)"/></marker>
+              </defs>
+              <text class="arch-col" x="190" y="24">THREE SIGNALS NEAR 8 PM</text>
+              <circle class="arch-node" cx="190" cy="190" r="110"/>
+              <line class="lt-tick" x1="190" y1="80" x2="190" y2="90"/>
+              <line class="lt-tick" x1="218.5" y1="83.7" x2="217.2" y2="88.6"/>
+              <line class="lt-tick" x1="245" y1="94.7" x2="242.5" y2="99.1"/>
+              <line class="lt-tick" x1="267.8" y1="112.2" x2="264.2" y2="115.8"/>
+              <line class="lt-tick" x1="285.3" y1="135" x2="280.9" y2="137.5"/>
+              <line class="lt-tick" x1="296.3" y1="161.5" x2="291.4" y2="162.8"/>
+              <line class="lt-tick" x1="300" y1="190" x2="290" y2="190"/>
+              <line class="lt-tick" x1="296.3" y1="218.5" x2="291.4" y2="217.2"/>
+              <line class="lt-tick" x1="285.3" y1="245" x2="280.9" y2="242.5"/>
+              <line class="lt-tick" x1="267.8" y1="267.8" x2="264.2" y2="264.2"/>
+              <line class="lt-tick" x1="245" y1="285.3" x2="242.5" y2="280.9"/>
+              <line class="lt-tick" x1="218.5" y1="296.3" x2="217.2" y2="291.4"/>
+              <line class="lt-tick" x1="190" y1="300" x2="190" y2="290"/>
+              <line class="lt-tick" x1="161.5" y1="296.3" x2="162.8" y2="291.4"/>
+              <line class="lt-tick" x1="135" y1="285.3" x2="137.5" y2="280.9"/>
+              <line class="lt-tick" x1="112.2" y1="267.8" x2="115.8" y2="264.2"/>
+              <line class="lt-tick" x1="94.7" y1="245" x2="99.1" y2="242.5"/>
+              <line class="lt-tick" x1="83.7" y1="218.5" x2="88.6" y2="217.2"/>
+              <line class="lt-tick" x1="80" y1="190" x2="90" y2="190"/>
+              <line class="lt-tick" x1="83.7" y1="161.5" x2="88.6" y2="162.8"/>
+              <line class="lt-tick" x1="94.7" y1="135" x2="99.1" y2="137.5"/>
+              <line class="lt-tick" x1="112.2" y1="112.2" x2="115.8" y2="115.8"/>
+              <line class="lt-tick" x1="135" y1="94.7" x2="137.5" y2="99.1"/>
+              <line class="lt-tick" x1="161.5" y1="83.7" x2="162.8" y2="88.6"/>
+              <text class="lt-hour is-mid" x="190" y="68">12 AM</text>
+              <text class="lt-hour is-start" x="310" y="194">6 AM</text>
+              <text class="lt-hour is-mid" x="190" y="322">12 PM</text>
+              <text class="lt-hour is-end" x="70" y="194">6 PM</text>
+              <path class="arch-flow is-strong is-buddy" d="M190 190L109.5 141.9" marker-end="url(#lt-arrow-is-buddy)"/>
+              <circle class="lt-signal" cx="91.3" cy="141.3" r="4.5"/>
+              <circle class="lt-signal" cx="96" cy="132.9" r="4.5"/>
+              <circle class="lt-signal" cx="99.9" cy="126.9" r="4.5"/>
+              <text class="arch-caption" x="190" y="352">signals 7:45, 8:05, 8:20 PM</text>
+              <text class="arch-caption is-buddy" x="190" y="370">circular mean 8:03 PM</text>
+              <text class="arch-caption" x="190" y="388">strength 0.998</text>
+              <text class="arch-col" x="570" y="24">TWO SIGNALS NEAR MIDNIGHT</text>
+              <circle class="arch-node" cx="570" cy="190" r="110"/>
+              <line class="lt-tick" x1="570" y1="80" x2="570" y2="90"/>
+              <line class="lt-tick" x1="598.5" y1="83.7" x2="597.2" y2="88.6"/>
+              <line class="lt-tick" x1="625" y1="94.7" x2="622.5" y2="99.1"/>
+              <line class="lt-tick" x1="647.8" y1="112.2" x2="644.2" y2="115.8"/>
+              <line class="lt-tick" x1="665.3" y1="135" x2="660.9" y2="137.5"/>
+              <line class="lt-tick" x1="676.3" y1="161.5" x2="671.4" y2="162.8"/>
+              <line class="lt-tick" x1="680" y1="190" x2="670" y2="190"/>
+              <line class="lt-tick" x1="676.3" y1="218.5" x2="671.4" y2="217.2"/>
+              <line class="lt-tick" x1="665.3" y1="245" x2="660.9" y2="242.5"/>
+              <line class="lt-tick" x1="647.8" y1="267.8" x2="644.2" y2="264.2"/>
+              <line class="lt-tick" x1="625" y1="285.3" x2="622.5" y2="280.9"/>
+              <line class="lt-tick" x1="598.5" y1="296.3" x2="597.2" y2="291.4"/>
+              <line class="lt-tick" x1="570" y1="300" x2="570" y2="290"/>
+              <line class="lt-tick" x1="541.5" y1="296.3" x2="542.8" y2="291.4"/>
+              <line class="lt-tick" x1="515" y1="285.3" x2="517.5" y2="280.9"/>
+              <line class="lt-tick" x1="492.2" y1="267.8" x2="495.8" y2="264.2"/>
+              <line class="lt-tick" x1="474.7" y1="245" x2="479.1" y2="242.5"/>
+              <line class="lt-tick" x1="463.7" y1="218.5" x2="468.6" y2="217.2"/>
+              <line class="lt-tick" x1="460" y1="190" x2="470" y2="190"/>
+              <line class="lt-tick" x1="463.7" y1="161.5" x2="468.6" y2="162.8"/>
+              <line class="lt-tick" x1="474.7" y1="135" x2="479.1" y2="137.5"/>
+              <line class="lt-tick" x1="492.2" y1="112.2" x2="495.8" y2="115.8"/>
+              <line class="lt-tick" x1="515" y1="94.7" x2="517.5" y2="99.1"/>
+              <line class="lt-tick" x1="541.5" y1="83.7" x2="542.8" y2="88.6"/>
+              <text class="lt-hour is-mid" x="570" y="68">12 AM</text>
+              <text class="lt-hour is-start" x="690" y="194">6 AM</text>
+              <text class="lt-hour is-mid" x="570" y="322">12 PM</text>
+              <text class="lt-hour is-end" x="450" y="194">6 PM</text>
+              <path class="arch-flow is-strong is-buddy" d="M570 190L570 96.1" marker-end="url(#lt-arrow-is-buddy)"/>
+              <path class="arch-flow is-strong is-warn" d="M570 190L570 284" marker-end="url(#lt-arrow-is-warn)"/>
+              <circle class="lt-signal" cx="565.2" cy="80.1" r="4.5"/>
+              <circle class="lt-signal" cx="574.8" cy="80.1" r="4.5"/>
+              <text class="arch-caption" x="570" y="352">signals 11:50 PM, 12:10 AM</text>
+              <text class="arch-caption is-buddy" x="570" y="370">circular mean 12:00 AM</text>
+              <text class="arch-caption is-warn" x="570" y="388">linear mean 12:00 PM</text>
+            </svg>
+          </div>
+          <figcaption>Likely Time. Each dot is one signal on a 24-hour clock, with midnight at the top. Left: three signals at 7:45, 8:05, and 8:20 PM average to 8:03 PM with a strength of 0.998, so the worker uses that time. Right: two signals around midnight, where the linear average points to noon and the circular mean correctly points to midnight.</figcaption>
+        </figure>
+
+        <h4>Cadence Experiments</h4>
+        <p>The cadence treatments change which days in the recovery window get a message. Each cadence tests its own
+          hypothesis and runs on its own pod.</p>
+        <figure class="detail-figure viz">
+          <svg viewBox="0 0 720 214" role="group" aria-label="Message days of the four cadence treatments">
+            <g aria-hidden="true">
+              <line class="viz-grid" x1="200" y1="8" x2="200" y2="154"/>
+              <text class="viz-axis" x="200" y="176" text-anchor="middle">0</text>
+              <line class="viz-grid" x1="281.7" y1="8" x2="281.7" y2="154"/>
+              <text class="viz-axis" x="281.7" y="176" text-anchor="middle">5</text>
+              <line class="viz-grid" x1="363.3" y1="8" x2="363.3" y2="154"/>
+              <text class="viz-axis" x="363.3" y="176" text-anchor="middle">10</text>
+              <line class="viz-grid" x1="445" y1="8" x2="445" y2="154"/>
+              <text class="viz-axis" x="445" y="176" text-anchor="middle">15</text>
+              <line class="viz-grid" x1="526.7" y1="8" x2="526.7" y2="154"/>
+              <text class="viz-axis" x="526.7" y="176" text-anchor="middle">20</text>
+              <line class="viz-grid" x1="608.3" y1="8" x2="608.3" y2="154"/>
+              <text class="viz-axis" x="608.3" y="176" text-anchor="middle">25</text>
+              <line class="viz-grid" x1="690" y1="8" x2="690" y2="154"/>
+              <text class="viz-axis" x="690" y="176" text-anchor="middle">30</text>
+              <text class="viz-axis-title" x="445" y="202" text-anchor="middle">Days after the expiration date</text>
+            </g>
+            <text class="viz-label" x="186" y="32.5" text-anchor="end" aria-hidden="true">Front-loaded</text>
+            <line class="viz-track" x1="200" y1="28" x2="690" y2="28" aria-hidden="true"/>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Front-loaded: Day 1" data-value="Day 1" data-label="Front-loaded"><rect class="viz-hit" x="204.3" y="14" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="216.3" cy="28" r="6"/></g>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Front-loaded: Day 3" data-value="Day 3" data-label="Front-loaded"><rect class="viz-hit" x="237" y="14" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="249" cy="28" r="6"/></g>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Front-loaded: Day 5" data-value="Day 5" data-label="Front-loaded"><rect class="viz-hit" x="269.7" y="14" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="281.7" cy="28" r="6"/></g>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Front-loaded: Day 14" data-value="Day 14" data-label="Front-loaded"><rect class="viz-hit" x="416.7" y="14" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="428.7" cy="28" r="6"/></g>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Front-loaded: Day 29" data-value="Day 29" data-label="Front-loaded"><rect class="viz-hit" x="661.7" y="14" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="673.7" cy="28" r="6"/></g>
+            <text class="viz-label" x="186" y="68.5" text-anchor="end" aria-hidden="true">Minimalist</text>
+            <line class="viz-track" x1="200" y1="64" x2="690" y2="64" aria-hidden="true"/>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Minimalist: Day 2" data-value="Day 2" data-label="Minimalist"><rect class="viz-hit" x="220.7" y="50" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="232.7" cy="64" r="6"/></g>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Minimalist: Day 14" data-value="Day 14" data-label="Minimalist"><rect class="viz-hit" x="416.7" y="50" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="428.7" cy="64" r="6"/></g>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Minimalist: Day 29" data-value="Day 29" data-label="Minimalist"><rect class="viz-hit" x="661.7" y="50" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="673.7" cy="64" r="6"/></g>
+            <text class="viz-label" x="186" y="104.5" text-anchor="end" aria-hidden="true">LLM-proposed</text>
+            <line class="viz-track" x1="200" y1="100" x2="690" y2="100" aria-hidden="true"/>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="LLM-proposed: Day 2" data-value="Day 2" data-label="LLM-proposed"><rect class="viz-hit" x="220.7" y="86" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="232.7" cy="100" r="6"/></g>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="LLM-proposed: Day 5" data-value="Day 5" data-label="LLM-proposed"><rect class="viz-hit" x="269.7" y="86" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="281.7" cy="100" r="6"/></g>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="LLM-proposed: Day 9" data-value="Day 9" data-label="LLM-proposed"><rect class="viz-hit" x="335" y="86" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="347" cy="100" r="6"/></g>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="LLM-proposed: Day 14" data-value="Day 14" data-label="LLM-proposed"><rect class="viz-hit" x="416.7" y="86" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="428.7" cy="100" r="6"/></g>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="LLM-proposed: Day 29" data-value="Day 29" data-label="LLM-proposed"><rect class="viz-hit" x="661.7" y="86" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="673.7" cy="100" r="6"/></g>
+            <text class="viz-label" x="186" y="140.5" text-anchor="end" aria-hidden="true">Production + day 2</text>
+            <line class="viz-track" x1="200" y1="136" x2="690" y2="136" aria-hidden="true"/>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Production + day 2: Day 2" data-value="Day 2" data-label="Production + day 2"><rect class="viz-hit" x="220.7" y="122" width="24" height="28"/><circle class="viz-shape viz-s1 viz-dot" cx="232.7" cy="136" r="6"/></g>
+            <text class="viz-note" x="246.7" y="140.5" aria-hidden="true">+ the production days</text>
+          </svg>
+          <div class="viz-tip" hidden><span class="viz-tip-value"></span><span class="viz-tip-label"></span></div>
+          <figcaption>Cadence treatments. Each dot is one message day. Front-loaded tests whether customers are most likely to fix their payment right after it fails. Minimalist tests whether fewer messages work just as well, because customers come back when they need the app again. The LLM-proposed cadence spaces messages with growing gaps. Production plus day 2 is a near-control that adds one early message to the production schedule.</figcaption>
+          <details class="viz-table">
+            <summary>Show the data table</summary>
+            <div class="arch-table-wrap">
+              <table class="arch-table"><thead><tr><th>Cadence</th><th>Message days</th><th>Hypothesis</th></tr></thead><tbody><tr><td>Front-loaded</td><td>1, 3, 5, 14, 29</td><td>Customers are most likely to fix their payment right after it fails.</td></tr><tr><td>Minimalist</td><td>2, 14, 29</td><td>Customers come back when they need the app again, so fewer messages work as well.</td></tr><tr><td>LLM-proposed</td><td>2, 5, 9, 14, 29</td><td>Gaps that increase over time.</td></tr><tr><td>Production + day 2</td><td>2, plus the production days</td><td>A near-control that adds one early message to the production days.</td></tr></tbody></table>
+            </div>
+          </details>
+        </figure>
+
+        <h4>In-Pod Control</h4>
+        <p>Pods drift on their own, so comparing one pod to another is not reliable. Starting in late July, each
+          send-time treatment applies only to even account IDs, and the odd account IDs in the same pod serve as the
+          control.</p>
+
+        <h3>Phase 2: LLM</h3>
+        <p>A fixed hour treats every customer the same, even though customers manage their subscriptions at very
+          different times of day. So we tested whether a large LLM, given a system prompt and anonymized
+          subscription data, could pick a better send time than a uniform rule. It first had to show it could
+          identify which subscriptions would be won back, and then predict the local time of that win-back.</p>
+        <p>We built a Python harness that runs the same cohort through different prompts, models, and reasoning
+          settings (steps in the figure below). Three design choices keep the test fair:</p>
+        <ul class="detail-list">
+          <li><strong>Outcome mask.</strong> The model sees each subscription as it looked right before its most
+            recent win-back. For every other subscription, the harness strips the same fields, so the two classes
+            look alike.</li>
+          <li><strong>Enrichment.</strong> The harness converts timestamps into local ISO 8601 strings and adds app
+            names next to app IDs. This makes the data easier to read without adding new information.</li>
+          <li><strong>Structured output.</strong> The model answers through a tool call with four fields: a win-back
+            boolean, a send time in HH:MM format, and a reason for each.</li>
+        </ul>
+        <figure class="detail-figure arch-figure">
+          <div class="arch-diagram">
+            <svg viewBox="0 0 760 244" role="img" aria-labelledby="hn-title hn-desc">
+              <title id="hn-title">Evaluation harness steps</title>
+              <desc id="hn-desc">Eight steps: cohort, fetch, filter, label, mask, enrich, model call, and grade.</desc>
+              <defs>
+                <marker id="hn-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto"><path d="M0 0L10 5L0 10Z" fill="rgba(6, 29, 73, 0.4)"/></marker>
+              </defs>
+              <path class="arch-flow" d="M159 50H199" marker-end="url(#hn-arrow)"/>
+              <path class="arch-flow" d="M359 50H399" marker-end="url(#hn-arrow)"/>
+              <path class="arch-flow" d="M559 50H599" marker-end="url(#hn-arrow)"/>
+              <path class="arch-flow" d="M680 92V148" marker-end="url(#hn-arrow)"/>
+              <path class="arch-flow" d="M601 192H561" marker-end="url(#hn-arrow)"/>
+              <path class="arch-flow" d="M401 192H361" marker-end="url(#hn-arrow)"/>
+              <path class="arch-flow" d="M201 192H161" marker-end="url(#hn-arrow)"/>
+              <rect class="arch-node" x="1" y="8" width="158" height="84" rx="6"/>
+              <text class="arch-label" x="80" y="38">1 · Cohort</text>
+              <text class="arch-caption" x="80" y="60">accounts with at</text>
+              <text class="arch-caption" x="80" y="77">least one win-back</text>
+              <rect class="arch-node" x="201" y="8" width="158" height="84" rx="6"/>
+              <text class="arch-label" x="280" y="38">2 · Fetch</text>
+              <text class="arch-caption" x="280" y="60">subscriptions and</text>
+              <text class="arch-caption" x="280" y="77">event history</text>
+              <rect class="arch-node" x="401" y="8" width="158" height="84" rx="6"/>
+              <text class="arch-label" x="480" y="38">3 · Filter</text>
+              <text class="arch-caption" x="480" y="60">keep lapsed</text>
+              <text class="arch-caption" x="480" y="77">subscriptions</text>
+              <rect class="arch-node" x="601" y="8" width="158" height="84" rx="6"/>
+              <text class="arch-label" x="680" y="38">4 · Label</text>
+              <text class="arch-caption" x="680" y="60">win-back events</text>
+              <text class="arch-caption" x="680" y="77">give the truth</text>
+              <rect class="arch-node" x="601" y="150" width="158" height="84" rx="6"/>
+              <text class="arch-label" x="680" y="180">5 · Mask</text>
+              <text class="arch-caption" x="680" y="202">hide data after</text>
+              <text class="arch-caption" x="680" y="219">the last win-back</text>
+              <rect class="arch-node" x="401" y="150" width="158" height="84" rx="6"/>
+              <text class="arch-label" x="480" y="180">6 · Enrich</text>
+              <text class="arch-caption" x="480" y="202">local times,</text>
+              <text class="arch-caption" x="480" y="219">app names</text>
+              <rect class="arch-node is-buddy" x="201" y="150" width="158" height="84" rx="6"/>
+              <text class="arch-label" x="280" y="180">7 · Model call</text>
+              <text class="arch-caption" x="280" y="202">large LLM with</text>
+              <text class="arch-caption" x="280" y="219">a 4-field tool</text>
+              <rect class="arch-node" x="1" y="150" width="158" height="84" rx="6"/>
+              <text class="arch-label" x="80" y="180">8 · Grade</text>
+              <text class="arch-caption" x="80" y="202">exact match and</text>
+              <text class="arch-caption" x="80" y="219">circular distance</text>
+            </svg>
+          </div>
+          <figcaption>Evaluation harness. For each account, the harness pulls data from internal commerce tools, keeps the lapsed subscriptions, and labels each one from its win-back events. It then masks and enriches the data, calls the model, and grades the response.</figcaption>
+        </figure>
+        <p>The grader checks the boolean with an exact match. For the send time, it measures circular distance to
+          the nearest real win-back time, so 11:50 PM and 12:10 AM count as 20 minutes apart.</p>
+
+        <h3>Phase 3: Machine Learning</h3>
+        <p>In Phase 2, most of the LLM's reasoning read like a list of engineered features: number of earlier
+          win-backs, tenure, cancellation type. Phase 3 also reframes the question. Instead of forecasting when a
+          subscriber will come back, it asks how the probability of recovery changes if the worker sends the message
+          at a different local hour.</p>
+
+        <h4>Data and Label</h4>
+        <p>Each row is one billing-error episode. The action is the local hour of the first recovery message after
+          the failure, and the outcome is whether the subscription recovers within 30 days, through either a renewal
+          or a win-back event. Counting both matters: the event type only reflects when the payment went through, so
+          a win-back-only label would mark many of the fastest recoveries as failures.</p>
+        <p>The cohort covers about 5 million subscriptions, balanced across pods and across 60-day snapshots from
+          June 2025 to June 2026. It ends two days before the first test pod started, so no episode saw the new
+          logic. We split the data by account into 3,286,180 training rows, 365,179 validation rows, and 913,018
+          test rows.</p>
+        <p>We found and fixed two data problems that would have skewed the results:</p>
+        <ul class="detail-list">
+          <li><strong>Sample bias.</strong> An early per-pod trim kept the first rows by subscription ID, and
+            subscription IDs grow with signup date. The kept subscriptions recovered at 2.4 times the rate of the
+            dropped ones, so we replaced the trim with a hash-based sample.</li>
+          <li><strong>Leakage.</strong> Some fields on the open purchase row are only written after a recovery. We
+            now read those fields from the previous closed purchase instead.</li>
+        </ul>
+
+        <h4>Model and Features</h4>
+        <p>We use gradient-boosted trees in <a href="https://xgboost.readthedocs.io/">XGBoost</a> 2.1.4. Trees pick
+          up interactions and thresholds without explicit terms, and they handle missing values and high-cardinality
+          categories natively. We did not benchmark other model families, so this is a reasoned choice rather than a
+          measured one. The model has 99 feature modules in nine groups (Table A2 in the appendix), and every
+          feature outside the send-time group uses only data from before the failure.</p>
+        <p>The send hour is treated as one of 24 categories, so a single split can group 10 PM, 11 PM, midnight, and
+          1 AM together. Features that summarize many timestamps use the same circular math as Likely Time. The
+          reference model allows up to 2,500 trees at depth 12, and early stopping ends training at around 2,460
+          trees.</p>
+
+        <h4>Send-Hour Sweep</h4>
+        <p>We score each held-out subscription 24 times, once per candidate local hour, changing only the send hour
+          and its delay from the failure. If a candidate hour falls before the failure, the sweep moves the message
+          to that hour on the next day. Scoring at the actual hour reproduces the original prediction for every
+          row.</p>
+        <figure class="detail-figure arch-figure">
+          <div class="arch-diagram">
+            <svg viewBox="0 0 760 214" role="img" aria-labelledby="sw-title sw-desc">
+              <title id="sw-title">Send-hour sweep with the roll-forward rule</title>
+              <desc id="sw-desc">A billing failure at 2:30 PM. Candidate hours after the failure stay on the same day. Candidate hours before the failure move to the same hour on the next day.</desc>
+              <defs>
+                <marker id="sw-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto"><path d="M0 0L10 5L0 10Z" fill="rgba(126, 75, 146, 0.85)"/></marker>
+              </defs>
+              <text class="arch-col" x="210" y="22">DAY OF THE FAILURE</text>
+              <text class="arch-col" x="550" y="22">NEXT DAY</text>
+              <line class="lt-tick" x1="40" y1="112" x2="720" y2="112"/>
+              <line class="lt-tick" x1="380" y1="62" x2="380" y2="126"/>
+              <line class="sw-fail" x1="245.4" y1="88" x2="245.4" y2="128"/>
+              <path class="arch-flow is-buddy is-strong" d="M167.5 102C167.5 52 507.5 52 507.5 102" marker-end="url(#sw-arrow)"/>
+              <text class="arch-caption is-buddy" x="337.5" y="50">9 AM moves 24 hours later</text>
+              <circle class="sw-ghost" cx="40" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="380" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="54.2" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="394.2" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="68.3" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="408.3" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="82.5" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="422.5" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="96.7" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="436.7" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="110.8" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="450.8" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="125" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="465" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="139.2" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="479.2" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="153.3" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="493.3" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="167.5" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="507.5" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="181.7" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="521.7" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="195.8" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="535.8" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="210" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="550" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="224.2" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="564.2" cy="112" r="4.5"/>
+              <circle class="sw-ghost" cx="238.3" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="578.3" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="252.5" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="266.7" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="280.8" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="295" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="309.2" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="323.3" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="337.5" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="351.7" cy="112" r="4.5"/>
+              <circle class="sw-dot" cx="365.8" cy="112" r="4.5"/>
+              <text class="lt-hour is-mid" x="40" y="142">12 AM</text>
+              <text class="lt-hour is-mid" x="125" y="142">6 AM</text>
+              <text class="lt-hour is-mid" x="210" y="142">12 PM</text>
+              <text class="lt-hour is-mid" x="295" y="142">6 PM</text>
+              <text class="lt-hour is-mid" x="380" y="142">12 AM</text>
+              <text class="lt-hour is-mid" x="465" y="142">6 AM</text>
+              <text class="lt-hour is-mid" x="550" y="142">12 PM</text>
+              <text class="lt-hour is-mid" x="635" y="142">6 PM</text>
+              <text class="lt-hour is-mid" x="720" y="142">12 AM</text>
+              <text class="arch-caption is-warn" x="245.4" y="164">billing failure at 2:30 PM</text>
+              <circle class="sw-ghost" cx="46" cy="192" r="4.5"/>
+              <text class="lt-hour is-start" x="58" y="196">candidate hour before the failure</text>
+              <circle class="sw-dot" cx="346" cy="192" r="4.5"/>
+              <text class="lt-hour is-start" x="358" y="196">hour that the sweep scores</text>
+            </svg>
+          </div>
+          <figcaption>Send-hour sweep. The model scores each subscription at all 24 local hours. When an hour falls before the failure on the same day, the sweep moves the message to that hour the next day. Without this rule, early hours would cover fewer subscriptions than late hours.</figcaption>
+        </figure>
+        <p>Because the production schedule did not assign hours at random, the sweep gives a conditional
+          expectation, not a causal effect. As a control, we also sweep the local hour of the billing retry. No
+          message is tied to that hour, so any variation there points to a time-of-day association the model failed
+          to absorb.</p>
+
+        <h2>Results</h2>
+        <h3>Human Heuristics</h3>
+        <p><strong>Operational fixes cut the scheduler lag from hours to about one minute.</strong></p>
+        <p>A fixed local hour lands every account in a timezone on the same moment, and some test pods fell several
+          hours behind. The timezone mix was not the cause: every badly lagging pod was already lagging before the
+          experiments began. We moved those treatments to low-lag pods and added a 30-minute jitter. We also turned
+          on <a href="buddy-pod-disaster-recovery-instances.html">buddy pods</a>, which let disaster-recovery pods
+          pick up work for busy primary pods.</p>
+        <p>The treatments are still live, with an in-pod control since late July, so their recovery results are not
+          on this page yet.</p>
+
+        <h3>LLM</h3>
+        <p>We evaluated 13,997 subscriptions across two cohorts. The General cohort covers accounts with at least
+          two subscriptions and at least one win-back event. The retry-heavy cohort also requires a billing-error
+          event, which makes it closer to the recovery use case. We compared two system prompts with the same model
+          and grader: a minimalist prompt that only states the task, and a handcrafted prompt that adds short
+          examples of patterns we had verified at scale.</p>
+
+        <p><strong>The handcrafted prompt is well calibrated and classifies best on the retry-heavy
+          cohort.</strong></p>
+        <p>The minimalist prompt predicts a win-back for about 44% of subscriptions in both cohorts, far above the
+          true base rates. The handcrafted prompt stays close to the base rate and reaches 0.84 precision and 0.86
+          recall on the retry-heavy cohort. On the General cohort, the minimalist prompt does worse than always
+          guessing no. When the two prompts disagree, the handcrafted one is right 88.6% of the time.</p>
+        <figure class="detail-figure viz">
+          <svg viewBox="0 0 720 252" role="group" aria-label="Predicted win-back rate of each prompt against the true base rate, for two cohorts">
+            <g aria-hidden="true">
+              <line class="viz-baseline" x1="6" y1="11" x2="6" y2="27"/>
+              <text class="viz-label" x="18" y="24">True base rate</text>
+              <circle class="viz-s1 viz-dot" cx="186" cy="19" r="6"/>
+              <text class="viz-label" x="198" y="24">Handcrafted prompt</text>
+              <circle class="viz-s2 viz-dot" cx="388" cy="19" r="6"/>
+              <text class="viz-label" x="400" y="24">Minimalist prompt</text>
+              <line class="viz-grid" x1="150" y1="58" x2="150" y2="200"/>
+              <text class="viz-axis" x="150" y="222" text-anchor="middle">0%</text>
+              <line class="viz-grid" x1="260" y1="58" x2="260" y2="200"/>
+              <text class="viz-axis" x="260" y="222" text-anchor="middle">10%</text>
+              <line class="viz-grid" x1="370" y1="58" x2="370" y2="200"/>
+              <text class="viz-axis" x="370" y="222" text-anchor="middle">20%</text>
+              <line class="viz-grid" x1="480" y1="58" x2="480" y2="200"/>
+              <text class="viz-axis" x="480" y="222" text-anchor="middle">30%</text>
+              <line class="viz-grid" x1="590" y1="58" x2="590" y2="200"/>
+              <text class="viz-axis" x="590" y="222" text-anchor="middle">40%</text>
+              <line class="viz-grid" x1="700" y1="58" x2="700" y2="200"/>
+              <text class="viz-axis" x="700" y="222" text-anchor="middle">50%</text>
+              <text class="viz-axis-title" x="425" y="246" text-anchor="middle">Percentage of subscriptions</text>
+            </g>
+            <text class="viz-label" x="136" y="101" text-anchor="end" aria-hidden="true">General</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="General · true base rate: 17.2%" data-value="17.2%" data-label="General · true base rate"><rect class="viz-hit" x="325.2" y="78" width="21.7" height="36"/><line class="viz-shape viz-baseline" x1="339.2" y1="84" x2="339.2" y2="108"/></g>
+            <text class="viz-value" x="339.2" y="126" text-anchor="middle" aria-hidden="true">17.2%</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="General · handcrafted prompt: 18.6%" data-value="18.6%" data-label="General · handcrafted prompt"><rect class="viz-hit" x="346.9" y="78" width="21.7" height="36"/><circle class="viz-shape viz-s1 viz-dot" cx="354.6" cy="96" r="6"/></g>
+            <text class="viz-value" x="354.6" y="80" text-anchor="middle" aria-hidden="true">18.6%</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="General · minimalist prompt: 44.8%" data-value="44.8%" data-label="General · minimalist prompt"><rect class="viz-hit" x="628.8" y="78" width="28" height="36"/><circle class="viz-shape viz-s2 viz-dot" cx="642.8" cy="96" r="6"/></g>
+            <text class="viz-value" x="642.8" y="80" text-anchor="middle" aria-hidden="true">44.8%</text>
+            <text class="viz-label" x="136" y="175" text-anchor="end" aria-hidden="true">Retry-heavy</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Retry-heavy · true base rate: 32.7%" data-value="32.7%" data-label="Retry-heavy · true base rate"><rect class="viz-hit" x="495.7" y="152" width="19.5" height="36"/><line class="viz-shape viz-baseline" x1="509.7" y1="158" x2="509.7" y2="182"/></g>
+            <text class="viz-value" x="509.7" y="200" text-anchor="middle" aria-hidden="true">32.7%</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Retry-heavy · handcrafted prompt: 33.7%" data-value="33.7%" data-label="Retry-heavy · handcrafted prompt"><rect class="viz-hit" x="515.2" y="152" width="19.5" height="36"/><circle class="viz-shape viz-s1 viz-dot" cx="520.7" cy="170" r="6"/></g>
+            <text class="viz-value" x="520.7" y="154" text-anchor="middle" aria-hidden="true">33.7%</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Retry-heavy · minimalist prompt: ≈44%" data-value="≈44%" data-label="Retry-heavy · minimalist prompt"><rect class="viz-hit" x="620" y="152" width="28" height="36"/><circle class="viz-shape viz-s2 viz-dot" cx="634" cy="170" r="6"/></g>
+            <text class="viz-value" x="634" y="154" text-anchor="middle" aria-hidden="true">≈44%</text>
+          </svg>
+          <div class="viz-tip" hidden><span class="viz-tip-value"></span><span class="viz-tip-label"></span></div>
+          <figcaption>Calibration. Each dot is the share of subscriptions a prompt predicts as a win-back, and the vertical line is the cohort's true base rate. The handcrafted prompt sits near the base rate in both cohorts, while the minimalist prompt sits near 44% in both. The minimalist prompt's retry-heavy value is approximate.</figcaption>
+          <details class="viz-table">
+            <summary>Show the data table</summary>
+            <div class="arch-table-wrap">
+              <table class="arch-table"><thead><tr><th>Cohort</th><th>True base rate</th><th>Handcrafted prompt</th><th>Minimalist prompt</th></tr></thead><tbody><tr><td>General</td><td>17.2%</td><td>18.6%</td><td>44.8%</td></tr><tr><td>Retry-heavy</td><td>32.7%</td><td>33.7%</td><td>≈44%</td></tr></tbody></table>
+            </div>
+          </details>
+        </figure>
+        <figure class="detail-figure viz">
+          <svg viewBox="0 0 720 262" role="group" aria-label="Precision and recall of each prompt on each cohort">
+            <g aria-hidden="true">
+              <rect class="viz-s1" x="0" y="11" width="14" height="14" rx="3"/>
+              <text class="viz-label" x="22" y="23">Precision</text>
+              <rect class="viz-s2" x="130" y="11" width="14" height="14" rx="3"/>
+              <text class="viz-label" x="152" y="23">Recall</text>
+              <line class="viz-grid" x1="250" y1="44" x2="250" y2="212"/>
+              <text class="viz-axis" x="250" y="234" text-anchor="middle">0</text>
+              <line class="viz-grid" x1="360" y1="44" x2="360" y2="212"/>
+              <text class="viz-axis" x="360" y="234" text-anchor="middle">0.25</text>
+              <line class="viz-grid" x1="470" y1="44" x2="470" y2="212"/>
+              <text class="viz-axis" x="470" y="234" text-anchor="middle">0.5</text>
+              <line class="viz-grid" x1="580" y1="44" x2="580" y2="212"/>
+              <text class="viz-axis" x="580" y="234" text-anchor="middle">0.75</text>
+              <line class="viz-grid" x1="690" y1="44" x2="690" y2="212"/>
+              <text class="viz-axis" x="690" y="234" text-anchor="middle">1</text>
+              <text class="viz-axis-title" x="470" y="258" text-anchor="middle">Score from 0 to 1</text>
+            </g>
+            <text class="viz-label" x="236" y="76.5" text-anchor="end" aria-hidden="true">General · minimalist</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="General · minimalist · precision: 0.29" data-value="0.29" data-label="General · minimalist · precision" data-anchor="end"><rect class="viz-hit" x="250" y="50" width="454" height="22"/><path class="viz-shape viz-s1" d="M250 52H373.6A4 4 0 0 1 377.6 56V66A4 4 0 0 1 373.6 70H250Z"/></g>
+            <text class="viz-value" x="385.6" y="65.5" aria-hidden="true">0.29</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="General · minimalist · recall: 0.76" data-value="0.76" data-label="General · minimalist · recall" data-anchor="end"><rect class="viz-hit" x="250" y="72" width="454" height="22"/><path class="viz-shape viz-s2" d="M250 74H580.4A4 4 0 0 1 584.4 78V88A4 4 0 0 1 580.4 92H250Z"/></g>
+            <text class="viz-value" x="592.4" y="87.5" aria-hidden="true">0.76</text>
+            <text class="viz-label" x="236" y="132.5" text-anchor="end" aria-hidden="true">General · handcrafted</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="General · handcrafted · precision: 0.66" data-value="0.66" data-label="General · handcrafted · precision" data-anchor="end"><rect class="viz-hit" x="250" y="106" width="454" height="22"/><path class="viz-shape viz-s1" d="M250 108H536.4A4 4 0 0 1 540.4 112V122A4 4 0 0 1 536.4 126H250Z"/></g>
+            <text class="viz-value" x="548.4" y="121.5" aria-hidden="true">0.66</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="General · handcrafted · recall: 0.71" data-value="0.71" data-label="General · handcrafted · recall" data-anchor="end"><rect class="viz-hit" x="250" y="128" width="454" height="22"/><path class="viz-shape viz-s2" d="M250 130H558.4A4 4 0 0 1 562.4 134V144A4 4 0 0 1 558.4 148H250Z"/></g>
+            <text class="viz-value" x="570.4" y="143.5" aria-hidden="true">0.71</text>
+            <text class="viz-label" x="236" y="188.5" text-anchor="end" aria-hidden="true">Retry-heavy · handcrafted</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Retry-heavy · handcrafted · precision: 0.84" data-value="0.84" data-label="Retry-heavy · handcrafted · precision" data-anchor="end"><rect class="viz-hit" x="250" y="162" width="454" height="22"/><path class="viz-shape viz-s1" d="M250 164H615.6A4 4 0 0 1 619.6 168V178A4 4 0 0 1 615.6 182H250Z"/></g>
+            <text class="viz-value" x="627.6" y="177.5" aria-hidden="true">0.84</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Retry-heavy · handcrafted · recall: 0.86" data-value="0.86" data-label="Retry-heavy · handcrafted · recall" data-anchor="end"><rect class="viz-hit" x="250" y="184" width="454" height="22"/><path class="viz-shape viz-s2" d="M250 186H624.4A4 4 0 0 1 628.4 190V200A4 4 0 0 1 624.4 204H250Z"/></g>
+            <text class="viz-value" x="636.4" y="199.5" aria-hidden="true">0.86</text>
+          </svg>
+          <div class="viz-tip" hidden><span class="viz-tip-value"></span><span class="viz-tip-label"></span></div>
+          <figcaption>Win-back classification. Precision is the share of predicted win-backs that are correct; recall is the share of true win-backs the prompt finds. The minimalist prompt finds many win-backs, but most of its positive predictions are wrong.</figcaption>
+          <details class="viz-table">
+            <summary>Show the data table</summary>
+            <div class="arch-table-wrap">
+              <table class="arch-table"><thead><tr><th>Cohort</th><th>Prompt</th><th>Precision</th><th>Recall</th></tr></thead><tbody><tr><td>General</td><td>minimalist</td><td>0.29</td><td>0.76</td></tr><tr><td>General</td><td>handcrafted</td><td>0.66</td><td>0.71</td></tr><tr><td>Retry-heavy</td><td>handcrafted</td><td>0.84</td><td>0.86</td></tr></tbody></table>
+            </div>
+          </details>
+        </figure>
+
+        <p><strong>Send-time predictions barely beat a random guess.</strong></p>
+        <p>A prediction counts as a hit if it lands within two hours of a real win-back time, so a random guess
+          scores about 16.7%. The two prompts score 22.6% and 23.5%, but a fixed 5 PM rule scores 25.4%. Each prompt
+          ends up applying one assumption to the whole population: the handcrafted prompt favors 9 AM to 1 PM, and
+          the minimalist prompt favors 7 PM to 9 PM.</p>
+        <figure class="detail-figure viz">
+          <svg viewBox="0 0 720 210" role="group" aria-label="Send-time hit rate of two prompts against two simple rules">
+            <g aria-hidden="true">
+              <line class="viz-grid" x1="210" y1="8" x2="210" y2="152"/>
+              <text class="viz-axis" x="210" y="174" text-anchor="middle">0%</text>
+              <line class="viz-grid" x1="370" y1="8" x2="370" y2="152"/>
+              <text class="viz-axis" x="370" y="174" text-anchor="middle">10%</text>
+              <line class="viz-grid" x1="530" y1="8" x2="530" y2="152"/>
+              <text class="viz-axis" x="530" y="174" text-anchor="middle">20%</text>
+              <line class="viz-grid" x1="690" y1="8" x2="690" y2="152"/>
+              <text class="viz-axis" x="690" y="174" text-anchor="middle">30%</text>
+              <text class="viz-axis-title" x="450" y="200" text-anchor="middle">Hit rate within two hours of a true win-back time</text>
+            </g>
+            <text class="viz-label" x="196" y="32.5" text-anchor="end" aria-hidden="true">Random guess</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Random guess: 16.7%" data-value="16.7%" data-label="Random guess" data-anchor="end"><rect class="viz-hit" x="0" y="11" width="704" height="34"/><path class="viz-shape viz-context" d="M210 18H473.2A4 4 0 0 1 477.2 22V34A4 4 0 0 1 473.2 38H210Z"/></g>
+            <text class="viz-value" x="485.2" y="32.5" aria-hidden="true">16.7%</text>
+            <text class="viz-label" x="196" y="68.5" text-anchor="end" aria-hidden="true">Minimalist prompt</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Minimalist prompt: 22.6%" data-value="22.6%" data-label="Minimalist prompt" data-anchor="end"><rect class="viz-hit" x="0" y="47" width="704" height="34"/><path class="viz-shape viz-s1" d="M210 54H567.6A4 4 0 0 1 571.6 58V70A4 4 0 0 1 567.6 74H210Z"/></g>
+            <text class="viz-value" x="579.6" y="68.5" aria-hidden="true">22.6%</text>
+            <text class="viz-label" x="196" y="104.5" text-anchor="end" aria-hidden="true">Handcrafted prompt</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Handcrafted prompt: 23.5%" data-value="23.5%" data-label="Handcrafted prompt" data-anchor="end"><rect class="viz-hit" x="0" y="83" width="704" height="34"/><path class="viz-shape viz-s1" d="M210 90H582A4 4 0 0 1 586 94V106A4 4 0 0 1 582 110H210Z"/></g>
+            <text class="viz-value" x="594" y="104.5" aria-hidden="true">23.5%</text>
+            <text class="viz-label" x="196" y="140.5" text-anchor="end" aria-hidden="true">Fixed 5 PM rule</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Fixed 5 PM rule: 25.4%" data-value="25.4%" data-label="Fixed 5 PM rule" data-anchor="end"><rect class="viz-hit" x="0" y="119" width="704" height="34"/><path class="viz-shape viz-context" d="M210 126H612.4A4 4 0 0 1 616.4 130V142A4 4 0 0 1 612.4 146H210Z"/></g>
+            <text class="viz-value" x="624.4" y="140.5" aria-hidden="true">25.4%</text>
+          </svg>
+          <div class="viz-tip" hidden><span class="viz-tip-value"></span><span class="viz-tip-label"></span></div>
+          <figcaption>Send-time hit rate. Each bar is the share of win-back subscriptions whose predicted local time lands within two hours of a real win-back time. Both prompts beat a random guess, but a fixed 5 PM rule beats both prompts.</figcaption>
+          <details class="viz-table">
+            <summary>Show the data table</summary>
+            <div class="arch-table-wrap">
+              <table class="arch-table"><thead><tr><th>Strategy</th><th>Hit rate</th></tr></thead><tbody><tr><td>Random guess</td><td>16.7%</td></tr><tr><td>Minimalist prompt</td><td>22.6%</td></tr><tr><td>Handcrafted prompt</td><td>23.5%</td></tr><tr><td>Fixed 5 PM rule</td><td>25.4%</td></tr></tbody></table>
+            </div>
+          </details>
+        </figure>
+
+        <p><strong>More reasoning does not help, and the cost is too high for production.</strong></p>
+        <p>The large LLM's accuracy is flat from low to high reasoning (75.9% to 76.2%) and drops to 71.8% at the
+          maximum setting. The smaller LLM drops from 69.4% to 65.8%. The full evaluation took 28,282 calls and cost
+          about $658 at public list prices. Median latency is 5.6 seconds, but p99 latency is 53.5 seconds. The LLM
+          is a good tool for testing hypotheses and generating training labels, but not for serving the full
+          population.</p>
+
+        <p><strong>Specific evidence makes a prediction trustworthy.</strong></p>
+        <p>The model's stated reason is a good guide to how much to trust its prediction. Reasons that cite an open
+          billing failure or a similar earlier recovery are right about 90% of the time, while reasons that cite
+          only an earlier win-back are much weaker. Positive predictions backed by two different signals are also
+          more precise than those backed by one.</p>
+        <figure class="detail-figure viz">
+          <svg viewBox="0 0 720 504" role="group" aria-label="Accuracy and precision of LLM predictions by the type of reason">
+            <g aria-hidden="true">
+              <text class="viz-group" x="0" y="20">ACCURACY WHEN THE REASON CITES</text>
+              <line class="viz-grid" x1="250" y1="32" x2="250" y2="184"/>
+              <line class="viz-grid" x1="357.5" y1="32" x2="357.5" y2="184"/>
+              <line class="viz-grid" x1="465" y1="32" x2="465" y2="184"/>
+              <line class="viz-grid" x1="572.5" y1="32" x2="572.5" y2="184"/>
+              <line class="viz-grid" x1="680" y1="32" x2="680" y2="184"/>
+            </g>
+            <text class="viz-label" x="236" y="52.5" text-anchor="end" aria-hidden="true">Server-side failure</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Accuracy · Server-side failure: 93%" data-value="93%" data-label="Accuracy · Server-side failure" data-anchor="end"><rect class="viz-hit" x="0" y="34" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 39H645.9A4 4 0 0 1 649.9 43V53A4 4 0 0 1 645.9 57H250Z"/></g>
+            <text class="viz-value" x="657.9" y="52.5" aria-hidden="true">93%</text>
+            <text class="viz-label" x="236" y="82.5" text-anchor="end" aria-hidden="true">Similar earlier recovery</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Accuracy · Similar earlier recovery: 93%" data-value="93%" data-label="Accuracy · Similar earlier recovery" data-anchor="end"><rect class="viz-hit" x="0" y="64" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 69H645.9A4 4 0 0 1 649.9 73V83A4 4 0 0 1 645.9 87H250Z"/></g>
+            <text class="viz-value" x="657.9" y="82.5" aria-hidden="true">93%</text>
+            <text class="viz-label" x="236" y="112.5" text-anchor="end" aria-hidden="true">Open billing failure</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Accuracy · Open billing failure: 90%" data-value="90%" data-label="Accuracy · Open billing failure" data-anchor="end"><rect class="viz-hit" x="0" y="94" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 99H633A4 4 0 0 1 637 103V113A4 4 0 0 1 633 117H250Z"/></g>
+            <text class="viz-value" x="645" y="112.5" aria-hidden="true">90%</text>
+            <text class="viz-label" x="236" y="142.5" text-anchor="end" aria-hidden="true">Any earlier win-back</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Accuracy · Any earlier win-back: 71%" data-value="71%" data-label="Accuracy · Any earlier win-back" data-anchor="end"><rect class="viz-hit" x="0" y="124" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 129H551.3A4 4 0 0 1 555.3 133V143A4 4 0 0 1 551.3 147H250Z"/></g>
+            <text class="viz-value" x="563.3" y="142.5" aria-hidden="true">71%</text>
+            <text class="viz-label" x="236" y="172.5" text-anchor="end" aria-hidden="true">Undo-cancel only</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Accuracy · Undo-cancel only: 61%" data-value="61%" data-label="Accuracy · Undo-cancel only" data-anchor="end"><rect class="viz-hit" x="0" y="154" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 159H508.3A4 4 0 0 1 512.3 163V173A4 4 0 0 1 508.3 177H250Z"/></g>
+            <text class="viz-value" x="520.3" y="172.5" aria-hidden="true">61%</text>
+            <line class="viz-ref" x1="632.7" y1="32" x2="632.7" y2="184" aria-hidden="true"/>
+            <text class="viz-note" x="632.7" y="24" text-anchor="middle" aria-hidden="true">average 89%</text>
+            <g aria-hidden="true">
+              <text class="viz-group" x="0" y="212">PRECISION BY NUMBER OF SIGNAL TYPES</text>
+              <line class="viz-grid" x1="250" y1="224" x2="250" y2="316"/>
+              <line class="viz-grid" x1="357.5" y1="224" x2="357.5" y2="316"/>
+              <line class="viz-grid" x1="465" y1="224" x2="465" y2="316"/>
+              <line class="viz-grid" x1="572.5" y1="224" x2="572.5" y2="316"/>
+              <line class="viz-grid" x1="680" y1="224" x2="680" y2="316"/>
+            </g>
+            <text class="viz-label" x="236" y="244.5" text-anchor="end" aria-hidden="true">One type</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Precision · One type: ≈33%" data-value="≈33%" data-label="Precision · One type" data-anchor="end"><rect class="viz-hit" x="0" y="226" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 231H387.9A4 4 0 0 1 391.9 235V245A4 4 0 0 1 387.9 249H250Z"/></g>
+            <text class="viz-value" x="399.9" y="244.5" aria-hidden="true">≈33%</text>
+            <text class="viz-label" x="236" y="274.5" text-anchor="end" aria-hidden="true">Two types</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Precision · Two types: 58%" data-value="58%" data-label="Precision · Two types" data-anchor="end"><rect class="viz-hit" x="0" y="256" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 261H495.4A4 4 0 0 1 499.4 265V275A4 4 0 0 1 495.4 279H250Z"/></g>
+            <text class="viz-value" x="507.4" y="274.5" aria-hidden="true">58%</text>
+            <text class="viz-label" x="236" y="304.5" text-anchor="end" aria-hidden="true">Three or more types</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Precision · Three or more types: 56%" data-value="56%" data-label="Precision · Three or more types" data-anchor="end"><rect class="viz-hit" x="0" y="286" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 291H486.8A4 4 0 0 1 490.8 295V305A4 4 0 0 1 486.8 309H250Z"/></g>
+            <text class="viz-value" x="498.8" y="304.5" aria-hidden="true">56%</text>
+            <g aria-hidden="true">
+              <text class="viz-group" x="0" y="344">PRECISION BY CONFIDENCE OF THE LANGUAGE</text>
+              <line class="viz-grid" x1="250" y1="356" x2="250" y2="448"/>
+              <line class="viz-grid" x1="357.5" y1="356" x2="357.5" y2="448"/>
+              <line class="viz-grid" x1="465" y1="356" x2="465" y2="448"/>
+              <line class="viz-grid" x1="572.5" y1="356" x2="572.5" y2="448"/>
+              <line class="viz-grid" x1="680" y1="356" x2="680" y2="448"/>
+            </g>
+            <text class="viz-label" x="236" y="376.5" text-anchor="end" aria-hidden="true">Certain</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Precision · Certain: 64.5%" data-value="64.5%" data-label="Precision · Certain" data-anchor="end"><rect class="viz-hit" x="0" y="358" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 363H523.4A4 4 0 0 1 527.4 367V377A4 4 0 0 1 523.4 381H250Z"/></g>
+            <text class="viz-value" x="535.4" y="376.5" aria-hidden="true">64.5%</text>
+            <text class="viz-label" x="236" y="406.5" text-anchor="end" aria-hidden="true">Hedged</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Precision · Hedged: 43%" data-value="43%" data-label="Precision · Hedged" data-anchor="end"><rect class="viz-hit" x="0" y="388" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 393H430.9A4 4 0 0 1 434.9 397V407A4 4 0 0 1 430.9 411H250Z"/></g>
+            <text class="viz-value" x="442.9" y="406.5" aria-hidden="true">43%</text>
+            <text class="viz-label" x="236" y="436.5" text-anchor="end" aria-hidden="true">Conflicted</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Precision · Conflicted: 25%" data-value="25%" data-label="Precision · Conflicted" data-anchor="end"><rect class="viz-hit" x="0" y="418" width="704" height="28"/><path class="viz-shape viz-s1" d="M250 423H353.5A4 4 0 0 1 357.5 427V437A4 4 0 0 1 353.5 441H250Z"/></g>
+            <text class="viz-value" x="365.5" y="436.5" aria-hidden="true">25%</text>
+            <g aria-hidden="true">
+              <text class="viz-axis" x="250" y="470" text-anchor="middle">0%</text>
+              <text class="viz-axis" x="357.5" y="470" text-anchor="middle">25%</text>
+              <text class="viz-axis" x="465" y="470" text-anchor="middle">50%</text>
+              <text class="viz-axis" x="572.5" y="470" text-anchor="middle">75%</text>
+              <text class="viz-axis" x="680" y="470" text-anchor="middle">100%</text>
+              <text class="viz-axis-title" x="465" y="494" text-anchor="middle">Percentage of predictions that are correct</text>
+            </g>
+          </svg>
+          <div class="viz-tip" hidden><span class="viz-tip-value"></span><span class="viz-tip-label"></span></div>
+          <figcaption>Reliable reasons. The top group shows how often a prediction is correct when its reason cites each signal; the vertical line is the average across this analysis. The lower groups show the precision of positive predictions by the number of signal types cited and by how confident the reason sounds. All values are approximate.</figcaption>
+          <details class="viz-table">
+            <summary>Show the data table</summary>
+            <div class="arch-table-wrap">
+              <table class="arch-table"><thead><tr><th>Measure</th><th>Reason</th><th>Value</th></tr></thead><tbody><tr><td>Accuracy</td><td>Server-side failure</td><td>93%</td></tr><tr><td>Accuracy</td><td>Similar earlier recovery</td><td>93%</td></tr><tr><td>Accuracy</td><td>Open billing failure</td><td>90%</td></tr><tr><td>Accuracy</td><td>Any earlier win-back</td><td>71%</td></tr><tr><td>Accuracy</td><td>Undo-cancel only</td><td>61%</td></tr><tr><td>Accuracy</td><td>Average of this analysis</td><td>89%</td></tr><tr><td>Precision</td><td>One type</td><td>≈33%</td></tr><tr><td>Precision</td><td>Two types</td><td>58%</td></tr><tr><td>Precision</td><td>Three or more types</td><td>56%</td></tr><tr><td>Precision</td><td>Certain</td><td>64.5%</td></tr><tr><td>Precision</td><td>Hedged</td><td>43%</td></tr><tr><td>Precision</td><td>Conflicted</td><td>25%</td></tr></tbody></table>
+            </div>
+          </details>
+        </figure>
+        <ul class="detail-list">
+          <li><strong>Blind spot.</strong> Card-expiry cases make up about 62% of missed win-backs, because the
+            model often treats an expired card as the end of the subscription.</li>
+          <li><strong>Mirror errors.</strong> About 82% of false positives over-trust earlier win-backs, and about
+            82% of false negatives over-trust voluntary cancellations.</li>
+          <li><strong>Long histories.</strong> On the longest histories, the false-positive rate climbs to about
+            50%.</li>
+          <li><strong>Repeatability.</strong> Given identical input, the decision flips in about 5% of repeated
+            calls.</li>
+        </ul>
+
+        <h3>Machine Learning</h3>
+        <p><strong>The model is well calibrated.</strong></p>
+        <div class="arch-table-wrap">
+          <table class="arch-table">
+            <thead>
+              <tr>
+                <th>Inputs</th>
+                <th>Test loss</th>
+                <th>ROC AUC</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>2 (send hour and delay only)</td>
+                <td>0.6552</td>
+                <td>0.637</td>
+              </tr>
+              <tr>
+                <td>14 (reference)</td>
+                <td>0.5376</td>
+                <td>0.803</td>
+              </tr>
+              <tr>
+                <td>94 (full)</td>
+                <td><strong>0.4831</strong></td>
+                <td><strong>0.846</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-note">Table 1: Model quality on 913,018 held-out episodes; no test-set account appears in
+          the training set. Lower test loss and higher ROC AUC are better, and bold marks the best value.</p>
+        <p>Across ten bins of predicted probability, the average gap between predicted and observed recovery is 0.22
+          percentage points. In other words, a predicted 0.7 really does mean recovery in about seven of ten
+          cases.</p>
+
+        <p><strong>Most of the raw send-hour spread comes from who gets the message.</strong></p>
+        <p>In the raw data, first messages sent at 5 AM recover 11.3 points more often than those sent at 9 PM. But
+          the baseline schedule did not choose hours, and the hours correlate with who the subscriber is. Messages
+          at 4 AM go to subscriptions with more than twice the median age of those messaged at 9 PM, and older
+          subscriptions recover more often. Across hours, median subscription age correlates with recovery at
+          0.93.</p>
+        <p>Two independent methods remove most of the spread. Re-weighting each hour to the same subscription mix
+          shrinks it to 3.1 points. In the model sweep, the spread shrinks as the model learns more about the
+          subscriber, from 9.4 points with two inputs to 2.7 points with 94 inputs.</p>
+        <figure class="detail-figure viz">
+          <svg viewBox="0 0 720 402" role="group" aria-label="Send-hour spread after each adjustment and at each model size">
+            <g aria-hidden="true">
+              <text class="viz-group" x="0" y="20">RE-WEIGHT THE OBSERVED DATA</text>
+              <line class="viz-grid" x1="260" y1="32" x2="260" y2="184"/>
+              <line class="viz-grid" x1="330" y1="32" x2="330" y2="184"/>
+              <line class="viz-grid" x1="400" y1="32" x2="400" y2="184"/>
+              <line class="viz-grid" x1="470" y1="32" x2="470" y2="184"/>
+              <line class="viz-grid" x1="540" y1="32" x2="540" y2="184"/>
+              <line class="viz-grid" x1="610" y1="32" x2="610" y2="184"/>
+              <line class="viz-grid" x1="680" y1="32" x2="680" y2="184"/>
+            </g>
+            <text class="viz-label" x="246" y="52.5" text-anchor="end" aria-hidden="true">No adjustment</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Re-weight · No adjustment: 11.3 points" data-value="11.3 points" data-label="Re-weight · No adjustment" data-anchor="end"><rect class="viz-hit" x="0" y="34" width="704" height="28"/><path class="viz-shape viz-s1" d="M260 39H651.5A4 4 0 0 1 655.5 43V53A4 4 0 0 1 651.5 57H260Z"/></g>
+            <text class="viz-value" x="663.5" y="52.5" aria-hidden="true">11.3</text>
+            <text class="viz-label" x="246" y="82.5" text-anchor="end" aria-hidden="true">Storefront</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Re-weight · Storefront: 9.9 points" data-value="9.9 points" data-label="Re-weight · Storefront" data-anchor="end"><rect class="viz-hit" x="0" y="64" width="704" height="28"/><path class="viz-shape viz-s1" d="M260 69H602.5A4 4 0 0 1 606.5 73V83A4 4 0 0 1 602.5 87H260Z"/></g>
+            <text class="viz-value" x="614.5" y="82.5" aria-hidden="true">9.9</text>
+            <text class="viz-label" x="246" y="112.5" text-anchor="end" aria-hidden="true">Subscription age</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Re-weight · Subscription age: ≈4.3 points" data-value="≈4.3 points" data-label="Re-weight · Subscription age" data-anchor="end"><rect class="viz-hit" x="0" y="94" width="704" height="28"/><path class="viz-shape viz-s1" d="M260 99H406.3A4 4 0 0 1 410.3 103V113A4 4 0 0 1 406.3 117H260Z"/></g>
+            <text class="viz-value" x="418.3" y="112.5" aria-hidden="true">≈4.3</text>
+            <text class="viz-label" x="246" y="142.5" text-anchor="end" aria-hidden="true">Age and delay</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Re-weight · Age and delay: 3.3 points" data-value="3.3 points" data-label="Re-weight · Age and delay" data-anchor="end"><rect class="viz-hit" x="0" y="124" width="704" height="28"/><path class="viz-shape viz-s1" d="M260 129H371.5A4 4 0 0 1 375.5 133V143A4 4 0 0 1 371.5 147H260Z"/></g>
+            <text class="viz-value" x="383.5" y="142.5" aria-hidden="true">3.3</text>
+            <text class="viz-label" x="246" y="172.5" text-anchor="end" aria-hidden="true">Age, delay, and storefront</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Re-weight · Age, delay, and storefront: 3.1 points" data-value="3.1 points" data-label="Re-weight · Age, delay, and storefront" data-anchor="end"><rect class="viz-hit" x="0" y="154" width="704" height="28"/><path class="viz-shape viz-s1" d="M260 159H364.5A4 4 0 0 1 368.5 163V173A4 4 0 0 1 364.5 177H260Z"/></g>
+            <text class="viz-value" x="376.5" y="172.5" aria-hidden="true">3.1</text>
+            <g aria-hidden="true">
+              <text class="viz-group" x="0" y="212">SWEEP THE SEND HOUR IN THE MODEL</text>
+              <line class="viz-grid" x1="260" y1="224" x2="260" y2="346"/>
+              <line class="viz-grid" x1="330" y1="224" x2="330" y2="346"/>
+              <line class="viz-grid" x1="400" y1="224" x2="400" y2="346"/>
+              <line class="viz-grid" x1="470" y1="224" x2="470" y2="346"/>
+              <line class="viz-grid" x1="540" y1="224" x2="540" y2="346"/>
+              <line class="viz-grid" x1="610" y1="224" x2="610" y2="346"/>
+              <line class="viz-grid" x1="680" y1="224" x2="680" y2="346"/>
+            </g>
+            <text class="viz-label" x="246" y="244.5" text-anchor="end" aria-hidden="true">2 inputs: hour and delay</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Model sweep · 2 inputs: hour and delay: 9.4 points" data-value="9.4 points" data-label="Model sweep · 2 inputs: hour and delay" data-anchor="end"><rect class="viz-hit" x="0" y="226" width="704" height="28"/><path class="viz-shape viz-s1" d="M260 231H585A4 4 0 0 1 589 235V245A4 4 0 0 1 585 249H260Z"/></g>
+            <text class="viz-value" x="597" y="244.5" aria-hidden="true">9.4</text>
+            <text class="viz-label" x="246" y="274.5" text-anchor="end" aria-hidden="true">14 inputs</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Model sweep · 14 inputs: 4.4 points" data-value="4.4 points" data-label="Model sweep · 14 inputs" data-anchor="end"><rect class="viz-hit" x="0" y="256" width="704" height="28"/><path class="viz-shape viz-s1" d="M260 261H410A4 4 0 0 1 414 265V275A4 4 0 0 1 410 279H260Z"/></g>
+            <text class="viz-value" x="422" y="274.5" aria-hidden="true">4.4</text>
+            <text class="viz-label" x="246" y="304.5" text-anchor="end" aria-hidden="true">31 inputs</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Model sweep · 31 inputs: 3.4 points" data-value="3.4 points" data-label="Model sweep · 31 inputs" data-anchor="end"><rect class="viz-hit" x="0" y="286" width="704" height="28"/><path class="viz-shape viz-s1" d="M260 291H375A4 4 0 0 1 379 295V305A4 4 0 0 1 375 309H260Z"/></g>
+            <text class="viz-value" x="387" y="304.5" aria-hidden="true">3.4</text>
+            <text class="viz-label" x="246" y="334.5" text-anchor="end" aria-hidden="true">94 inputs</text>
+            <g class="viz-mark" tabindex="0" role="img" aria-label="Model sweep · 94 inputs: 2.7 points" data-value="2.7 points" data-label="Model sweep · 94 inputs" data-anchor="end"><rect class="viz-hit" x="0" y="316" width="704" height="28"/><path class="viz-shape viz-s1" d="M260 321H350.5A4 4 0 0 1 354.5 325V335A4 4 0 0 1 350.5 339H260Z"/></g>
+            <text class="viz-value" x="362.5" y="334.5" aria-hidden="true">2.7</text>
+            <g aria-hidden="true">
+              <text class="viz-axis" x="260" y="368" text-anchor="middle">0</text>
+              <text class="viz-axis" x="330" y="368" text-anchor="middle">2</text>
+              <text class="viz-axis" x="400" y="368" text-anchor="middle">4</text>
+              <text class="viz-axis" x="470" y="368" text-anchor="middle">6</text>
+              <text class="viz-axis" x="540" y="368" text-anchor="middle">8</text>
+              <text class="viz-axis" x="610" y="368" text-anchor="middle">10</text>
+              <text class="viz-axis" x="680" y="368" text-anchor="middle">12</text>
+              <text class="viz-axis-title" x="470" y="392" text-anchor="middle">Best hour minus worst hour, in percentage points</text>
+            </g>
+          </svg>
+          <div class="viz-tip" hidden><span class="viz-tip-value"></span><span class="viz-tip-label"></span></div>
+          <figcaption>Send-hour spread. Each bar is the best hour minus the worst hour of mean recovery, in percentage points. The top group re-weights the observed data so every hour has the same subscription mix; the bottom group sweeps the send hour in models with more and more inputs. Both methods shrink the spread from about 11 points to about 3. The subscription-age value is derived from a 62% reduction in the raw spread.</figcaption>
+          <details class="viz-table">
+            <summary>Show the data table</summary>
+            <div class="arch-table-wrap">
+              <table class="arch-table"><thead><tr><th>Method</th><th>Adjustment or model</th><th>Spread (points)</th></tr></thead><tbody><tr><td>Re-weight</td><td>No adjustment</td><td>11.3</td></tr><tr><td>Re-weight</td><td>Storefront</td><td>9.9</td></tr><tr><td>Re-weight</td><td>Subscription age</td><td>≈4.3</td></tr><tr><td>Re-weight</td><td>Age and delay</td><td>3.3</td></tr><tr><td>Re-weight</td><td>Age, delay, and storefront</td><td>3.1</td></tr><tr><td>Model sweep</td><td>2 inputs: hour and delay</td><td>9.4</td></tr><tr><td>Model sweep</td><td>14 inputs</td><td>4.4</td></tr><tr><td>Model sweep</td><td>31 inputs</td><td>3.4</td></tr><tr><td>Model sweep</td><td>94 inputs</td><td>2.7</td></tr></tbody></table>
+            </div>
+          </details>
+        </figure>
+
+        <p><strong>Do not send at 9 PM.</strong></p>
+        <p>The practical takeaway is which hours to avoid. Under every adjustment, the morning peak flattens into a
+          broad daytime plateau, and 8 PM to 10 PM stays about 3 points below it. The model picks 5 AM most often,
+          but the live sweep never tested that hour. If the worker sent every first message at 5 AM, the 94-input
+          model predicts a 1.65-point lift.</p>
+        <figure class="detail-figure arch-figure">
+          <div class="arch-diagram">
+            <svg viewBox="0 0 760 150" role="img" aria-labelledby="hr-title hr-desc">
+              <title id="hr-title">Send hours: tested, preferred, and worst</title>
+              <desc id="hr-desc">The live sweep tested 6 AM to 12 AM and did not test 1 AM to 5 AM. The model selects 5 AM most often. After every adjustment, 8 PM to 10 PM is the worst window.</desc>
+              <rect class="hr-cell" x="44" y="12" width="14" height="14" rx="3"/>
+              <text class="lt-hour is-start" x="66" y="24">tested in the live sweep</text>
+              <rect class="hr-cell is-off" x="294" y="12" width="14" height="14" rx="3"/>
+              <text class="lt-hour is-start" x="316" y="24">not tested</text>
+              <rect class="hr-cell" x="45" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell is-off" x="73" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell is-off" x="101" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell is-off" x="129" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell is-off" x="157" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell is-off" x="185" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="213" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="241" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="269" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="297" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="325" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="353" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="381" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="409" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="437" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="465" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="493" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="521" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="549" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="577" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="605" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="633" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="661" y="48" width="26" height="26" rx="3"/>
+              <rect class="hr-cell" x="689" y="48" width="26" height="26" rx="3"/>
+              <text class="lt-hour is-mid" x="58" y="92">12 AM</text>
+              <text class="lt-hour is-mid" x="226" y="92">6 AM</text>
+              <text class="lt-hour is-mid" x="394" y="92">12 PM</text>
+              <text class="lt-hour is-mid" x="562" y="92">6 PM</text>
+              <text class="lt-hour is-mid" x="702" y="92">11 PM</text>
+              <path class="hr-marker" d="M198 102L205 114L191 114Z"/>
+              <text class="arch-caption" x="198" y="134">model’s most common pick</text>
+              <path class="hr-bracket" d="M605 104V111H687V104"/>
+              <text class="arch-caption is-warn" x="646" y="134">worst in every adjustment</text>
+            </svg>
+          </div>
+          <figcaption>What we know about the send hour. Purple cells are the hours the live sweep tested. The model picks 5 AM most often, but the live sweep did not cover it. Under every adjustment, 8 PM to 10 PM stays the worst window.</figcaption>
+        </figure>
+        <p>Picking each subscriber's best hour gives 3.41 points, but taking the highest of 24 predictions is biased
+          upward, so 1.65 points is the number to quote. It is an association, not a measured effect, and only a
+          live test can confirm it.</p>
+
+        <p><strong>The send hour is stronger than the control, but the control is weak.</strong></p>
+        <p>In the 94-input model, the per-subscriber range is 6.5 points for the send hour versus 1.4 points for the
+          retry hour. The control is weak evidence, though: the send-hour sweep also moves the delay, and the
+          control sweep scores combinations that never appear in the training data.</p>
+
+        <p><strong>If the hour matters, it matters for a small group.</strong></p>
+        <p>For the median subscription, the best hour beats the worst by 6.0 points under the 94-input model, versus
+          11.8 points under the 14-input model. The same subscribers look less sensitive to timing once the model
+          knows more about them. So if personalization is worth anything, the value sits in a minority with steep
+          curves, and the model can produce a list of exactly those subscribers.</p>
+
+        <p><strong>The model is cheap to run.</strong></p>
+        <p>The model is a single 327 MB file. It scores about 36,000 subscriptions per second on one eight-thread
+          machine, and all 92 training runs took 117 hours of local CPU time. It returns a calibrated number but no
+          explanation, and for choosing a send hour, an explanation is not needed.</p>
+
+        <h2>Limitations</h2>
+        <ul class="detail-list">
+          <li><strong>Online results.</strong> The send-time treatments are still live, and the cadence treatments
+            do not have an in-pod control.</li>
+          <li><strong>Untested hours.</strong> The live sweep skipped 1 AM to 5 AM, yet the model prefers 5 AM. A
+            live 5 AM test is the next step.</li>
+          <li><strong>Causality.</strong> The send-hour sweep measures an association, not a causal effect.</li>
+          <li><strong>Timezone accuracy.</strong> GMT offsets ignore DST; purchase records would give a more
+            accurate timezone.</li>
+          <li><strong>LLM grader.</strong> The send-time grader only accepts times close to a single observed event,
+            which makes it strict.</li>
+          <li><strong>Message content.</strong> This project only changes when a message is sent. A follow-up A/B
+            test changes the wording of the billing-retry push.</li>
+        </ul>
+
+        <h2 id="resources-title">Resources</h2>
+        <p>The evaluation harness, the XGBoost training code, and an experiment monitor live in internal
+          repositories.</p>
+
+        <p>This project started as my proposal for the 2026 Commerce Subscriptions intern program. I pitched it to
+          senior leadership, who selected it as an intern project, and the three phases follow the plan from that
+          proposal: deterministic rules first, then LLM prompts, then an XGBoost model. I mentored the intern from
+          the first week through the final presentation. The intern ran the experiments, built the harness and the
+          training pipeline, and wrote the detailed report this page summarizes. A teammate also advised on the
+          project, and I built the <a href="buddy-pod-disaster-recovery-instances.html">buddy pod</a> mode that
+          helped bring the scheduler lag down.</p>
+
+        <h2>Appendix</h2>
+        <h3>Experiment Assignments</h3>
+        <div class="arch-table-wrap is-wide">
+          <table class="arch-table">
+            <thead>
+              <tr>
+                <th>Treatment</th>
+                <th>Setting</th>
+                <th>Start</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Fixed time</td>
+                <td>One local hour for each pod, from 6 AM to 2 PM</td>
+                <td>June</td>
+              </tr>
+              <tr>
+                <td>Fixed time</td>
+                <td>One local hour for each pod, from 3 PM to 12 AM</td>
+                <td>June, moved to new pods later in June</td>
+              </tr>
+              <tr>
+                <td>Purchase-time replication</td>
+                <td>Initial purchase time of the newest subscription</td>
+                <td>June and July</td>
+              </tr>
+              <tr>
+                <td>Likely Time</td>
+                <td>Cluster strength threshold 0.7</td>
+                <td>June</td>
+              </tr>
+              <tr>
+                <td>Likely Time</td>
+                <td>Cluster strength threshold 0.8</td>
+                <td>June</td>
+              </tr>
+              <tr>
+                <td>Cadence</td>
+                <td>One cadence for each pod</td>
+                <td>June</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-note">Table A1: Experiment assignments in 2026. Starting in late July, each send-time
+          treatment applies only to even account IDs, with the odd account IDs in the same pod as the control. The
+          cadence treatments apply to the whole pod.</p>
+
+        <h3>Feature Groups</h3>
+        <div class="arch-table-wrap is-wide">
+          <table class="arch-table">
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>Inputs</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Subscription attributes</td>
+                <td>26</td>
+                <td>Storefront, price, billing period, tenure, operating system, pod, and other fixed properties</td>
+              </tr>
+              <tr>
+                <td>Message history</td>
+                <td>20</td>
+                <td>The recovery messages that the subscription already received, their channels, and their gaps</td>
+              </tr>
+              <tr>
+                <td>Account propensity</td>
+                <td>19</td>
+                <td>Earlier win-backs, deliberate cancellations, disputes, and renewal consistency</td>
+              </tr>
+              <tr>
+                <td>Purchase history</td>
+                <td>11</td>
+                <td>Values from the previous closed purchases</td>
+              </tr>
+              <tr>
+                <td>Calendar and clock</td>
+                <td>8</td>
+                <td>When the failure occurred, and the historical active hours of the subscriber</td>
+              </tr>
+              <tr>
+                <td>Message engagement</td>
+                <td>6</td>
+                <td>If a recovery message appeared on the device, and if the subscriber dismissed it</td>
+              </tr>
+              <tr>
+                <td>Send time</td>
+                <td>6</td>
+                <td>The action: local send hour, delay from the failure, channel, and distance from the active hour</td>
+              </tr>
+              <tr>
+                <td>Decline reason</td>
+                <td>2</td>
+                <td>The raw decline string, and the number of retries before the failure</td>
+              </tr>
+              <tr>
+                <td>Purchase flags</td>
+                <td>9</td>
+                <td>Nine flags from the previous purchase, from one module</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-note">Table A2: The nine feature groups. The purchase-flags module produces nine columns, so
+          the 99 modules yield 107 columns. The send-hour sweep cannot use the send day of week or the weekend flag,
+          which leaves 105 candidate columns.</p>
+
+        <h3>Likely Time Calculation</h3>
+        <div class="detail-equation">strength = √( (Σ cos θ<sub>i</sub>)² + (Σ sin θ<sub>i</sub>)² ) / n</div>
+        <div class="detail-equation">mean hour = (24 / 2π) · atan2( Σ sin θ<sub>i</sub>, Σ cos θ<sub>i</sub> ) mod 24
+        </div>
+        <p>In these equations, θ<sub>i</sub> = 2π × hour / 24 for each signal, and n is the number of signals. The
+          worked example below uses three signals from a user in US Pacific time: 7:45 PM (19.75 hours), 8:05 PM
+          (20.083 hours), and 8:20 PM (20.333 hours).</p>
+        <ol class="detail-list">
+          <li>Convert each time to a point on the unit circle. For 7:45 PM, the angle is 2π × 19.75 / 24 = 296.25°,
+            x = cos 296.25° = 0.442, and y = sin 296.25° = −0.897. For 8:05 PM, the angle is 301.25°, x = 0.519, and
+            y = −0.855. For 8:20 PM, the angle is 305.00°, x = 0.574, and y = −0.819.</li>
+          <li>Add the vectors. The sum of the cosines is 0.442 + 0.519 + 0.574 = 1.535. The sum of the sines is
+            −0.897 − 0.855 − 0.819 = −2.571.</li>
+          <li>Calculate the cluster strength. The length is √(1.535² + 2.571²) = 2.994, and the strength is 2.994 /
+            3 = 0.998. That is above 0.7, so the algorithm continues.</li>
+          <li>Calculate the circular mean. atan2(−2.571, 1.535) is −59.2°, which is 300.8° on the circle, or 20.056
+            hours. That is about 8:03 PM local time, which becomes the user's send time.</li>
+        </ol>
+      </section>
+    </main>
+  </div>
+  <script>
+    document.querySelectorAll(".viz").forEach((figure) => {
+      const tip = figure.querySelector(".viz-tip");
+      const valueText = tip.querySelector(".viz-tip-value");
+      const labelText = tip.querySelector(".viz-tip-label");
+
+      const show = (mark) => {
+        valueText.textContent = mark.dataset.value;
+        labelText.textContent = mark.dataset.label;
+        tip.hidden = false;
+        const shape = mark.querySelector(".viz-shape").getBoundingClientRect();
+        const frame = figure.getBoundingClientRect();
+        const anchorX = mark.dataset.anchor === "end" ? shape.right : shape.left + shape.width / 2;
+        const centered = anchorX - frame.left - tip.offsetWidth / 2;
+        const left = Math.max(0, Math.min(centered, frame.width - tip.offsetWidth));
+        tip.style.left = `${left}px`;
+        tip.style.top = `${shape.top - frame.top - tip.offsetHeight - 10}px`;
+      };
+
+      const hide = () => {
+        tip.hidden = true;
+      };
+
+      figure.querySelectorAll(".viz-mark").forEach((mark) => {
+        mark.addEventListener("pointerenter", () => show(mark));
+        mark.addEventListener("pointerleave", hide);
+        mark.addEventListener("focus", () => show(mark));
+        mark.addEventListener("blur", hide);
+      });
+    });
+  </script>
+</body>
+
+</html>

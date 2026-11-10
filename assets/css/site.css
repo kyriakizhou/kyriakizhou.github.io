@@ -209,6 +209,11 @@ a {
   line-height: var(--leading-normal);
 }
 
+.page-title .author-note {
+  margin-top: 4px;
+  font-size: clamp(12px, 0.9vw, 15px);
+}
+
 .archive-panel {
   margin-top: 28px;
 }
@@ -355,6 +360,45 @@ a {
 .table-note {
   max-width: 760px;
   font-size: clamp(13px, 1vw, 17px);
+}
+
+/* Paper-style footnotes: superscript markers in the text, numbered notes at the end of the page. */
+.fn-ref {
+  font-size: 0.68em;
+  line-height: 0;
+  vertical-align: super;
+}
+
+.fn-ref a {
+  padding: 0 0.12em;
+  color: rgba(126, 75, 146, 0.85);
+  text-decoration: none;
+}
+
+.footnotes {
+  margin: 18px 0 0;
+  padding-left: 1.6em;
+  color: rgba(6, 29, 73, 0.62);
+  font-size: clamp(13px, 1vw, 17px);
+  line-height: var(--leading-normal);
+}
+
+.footnotes li + li {
+  margin-top: 10px;
+}
+
+.footnotes li:target {
+  background: rgba(126, 75, 146, 0.08);
+}
+
+.footnotes .fn-back {
+  margin-left: 0.3em;
+  color: rgba(126, 75, 146, 0.85);
+  text-decoration: none;
+}
+
+.detail-section [id] {
+  scroll-margin-top: 24px;
 }
 
 .detail-section h3 {
